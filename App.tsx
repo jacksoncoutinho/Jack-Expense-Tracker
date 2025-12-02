@@ -4,7 +4,8 @@ import { AddTransaction } from './views/AddTransaction';
 import { Settings } from './views/Settings';
 import { Icons } from './components/ui/Icons';
 import { Transaction } from './types';
-import { getTransactions, saveTransaction, deleteTransaction, getCurrency, saveCurrency } from './services/storageService';
+import { getTransactions, saveTransaction, deleteTransaction, getCurrency, saveCurrency, getDriveConfig } from './services/storageService';
+import { driveService } from './services/driveService';
 
 type View = 'dashboard' | 'add' | 'settings';
 
@@ -17,6 +18,14 @@ export default function App() {
   useEffect(() => {
     setTransactions(getTransactions());
     setCurrency(getCurrency());
+
+    // Try to re-init GAPI if we have a client ID saved, but don't auto-login without user interaction usually.
+    // However, for GAPI V3, we load the script.
+    const config = getDriveConfig();
+    if (config.clientId) {
+      // Just load the lib, don't trigger auth yet
+      driveService.initGapi(config.clientId).catch(console.error);
+    }
   }, []);
 
   const handleAddTransaction = (t: Transaction) => {

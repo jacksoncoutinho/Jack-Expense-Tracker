@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '../components/ui/Button';
 import { Icons } from '../components/ui/Icons';
-import { exportToCSV, exportCategories, getDriveConfig, saveDriveConfig, getCategories, saveCategory, deleteCategory } from '../services/storageService';
+import { getDriveConfig, saveDriveConfig, getCategories, saveCategory, deleteCategory, overwriteData } from '../services/storageService';
+import { driveService } from '../services/driveService';
 import { DriveConfig, Category, TransactionType } from '../types';
 
 interface SettingsProps {
@@ -19,12 +20,12 @@ export const Settings: React.FC<SettingsProps> = ({ currency, onCurrencyChange }
   // Drive Config State
   const [driveConfig, setDriveConfig] = useState<DriveConfig>({
     isConnected: false,
-    folderName: 'Gemini Expenses',
-    fileName: 'transactions.csv',
-    autoSync: false
+    clientId: '',
+    fileName: 'expense_tracker_db.json'
   });
+  
   const [isSyncing, setIsSyncing] = useState(false);
-  const [isConnecting, setIsConnecting] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   // Category Management State
   const [categories, setCategories] = useState<Category[]>([]);
@@ -44,36 +45,74 @@ export const Settings: React.FC<SettingsProps> = ({ currency, onCurrencyChange }
     saveDriveConfig(newConfig);
   };
 
-  const handleConnect = () => {
-    setIsConnecting(true);
-    // Simulate API connection delay
-    setTimeout(() => {
-      handleDriveConfigChange('isConnected', true);
-      setIsConnecting(false);
-    }, 1500);
+  const handleLogin = async () => {
+    if (!driveConfig.clientId) {
+      setAuthError("Please enter a Client ID");
+      return;
+    }
+    setAuthError(null);
+
+    try {
+      // 1. Init GAPI
+      await driveService.initGapi(driveConfig.clientId);
+      
+      // 2. Init GIS and Trigger Login
+      driveService.initGis(driveConfig.clientId, async (tokenResponse) => {
+         if (tokenResponse && tokenResponse.access_token) {
+            handleDriveConfigChange('isConnected', true);
+            
+            // 3. Attempt to load existing data from Drive immediately
+            await handlePullFromDrive();
+         }
+      });
+      
+      driveService.login();
+
+    } catch (err: any) {
+      console.error("Login failed", err);
+      setAuthError(err.message || "Failed to initialize Google Login");
+    }
   };
 
-  const handleDisconnect = () => {
+  const handlePullFromDrive = async () => {
+      setIsSyncing(true);
+      try {
+          const fileName = driveConfig.fileName.endsWith('.json') ? driveConfig.fileName : `${driveConfig.fileName.split('.')[0]}.json`;
+          const fileId = await driveService.findFile(fileName);
+          
+          if (fileId) {
+             const data = await driveService.readFile(fileId);
+             if (data && data.transactions) {
+                 overwriteData(data.transactions, data.categories || []);
+                 setCategories(data.categories || []); // update local UI state
+                 handleDriveConfigChange('fileId', fileId);
+                 handleDriveConfigChange('lastSync', new Date().toLocaleString());
+                 alert("Data successfully loaded from Drive!");
+             }
+          } else {
+             console.log("File not found on Drive, will be created on next save.");
+          }
+      } catch (e) {
+          console.error("Pull failed", e);
+          setAuthError("Failed to read from Drive. Check permissions.");
+      } finally {
+          setIsSyncing(false);
+      }
+  };
+
+  const handleLogout = () => {
+    const google = window.google;
+    if (google) {
+        google.accounts.oauth2.revoke(
+            // We don't store access token in persistent state for security, 
+            // but normally we'd pass it here. 
+            // Simplified: just reset local state.
+            '', 
+            () => {}
+        );
+    }
     handleDriveConfigChange('isConnected', false);
     handleDriveConfigChange('lastSync', undefined);
-  };
-
-  const handleSync = () => {
-    setIsSyncing(true);
-    // Simulate upload delay then trigger download for both files
-    setTimeout(() => {
-      // 1. Export Transactions
-      exportToCSV(driveConfig.fileName);
-      
-      // 2. Export Categories Configuration
-      // We use a separate timeout to ensure the browser handles both downloads
-      setTimeout(() => {
-        exportCategories('categories_config.json');
-      }, 500);
-
-      handleDriveConfigChange('lastSync', new Date().toLocaleString());
-      setIsSyncing(false);
-    }, 1000);
   };
 
   const handleAddCategory = (e: React.FormEvent) => {
@@ -144,8 +183,102 @@ export const Settings: React.FC<SettingsProps> = ({ currency, onCurrencyChange }
         </div>
       </div>
 
-      {/* Category Management */}
+      {/* Google Drive Database Configuration */}
       <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+        <div className="flex items-center gap-4 mb-4">
+          <div className={`p-3 rounded-full ${driveConfig.isConnected ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
+            <Icons.Download size={24} />
+          </div>
+          <div>
+            <h3 className="font-semibold text-gray-900">Google Drive Database</h3>
+            <p className="text-sm text-gray-500">
+              {driveConfig.isConnected ? 'Connected & Syncing' : 'Sync data to personal Drive'}
+            </p>
+          </div>
+        </div>
+
+        {!driveConfig.isConnected ? (
+          <div className="space-y-4">
+            <div className="bg-blue-50 p-3 rounded-lg text-xs text-blue-700">
+               <p className="font-semibold mb-1">Setup Required:</p>
+               <ol className="list-decimal list-inside space-y-1">
+                 <li>Create a Project in Google Cloud Console.</li>
+                 <li>Enable <strong>Google Drive API</strong>.</li>
+                 <li>Create <strong>OAuth Client ID</strong> (Web Application).</li>
+                 <li>Add this URL to <strong>Authorized JavaScript origins</strong>.</li>
+               </ol>
+            </div>
+            
+            <div>
+               <label className="block text-sm font-medium text-gray-700 mb-1">Google Client ID</label>
+               <input
+                 type="text"
+                 value={driveConfig.clientId}
+                 onChange={(e) => handleDriveConfigChange('clientId', e.target.value)}
+                 className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary focus:border-transparent text-sm"
+                 placeholder="e.g., 12345-abcde.apps.googleusercontent.com"
+               />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Database Filename</label>
+              <input 
+                type="text" 
+                value={driveConfig.fileName}
+                onChange={(e) => handleDriveConfigChange('fileName', e.target.value)}
+                className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary focus:border-transparent"
+                placeholder="expense_tracker_db.json"
+              />
+            </div>
+
+            {authError && <p className="text-sm text-red-500">{authError}</p>}
+
+            <div className="pt-2">
+              <Button onClick={handleLogin} fullWidth variant="primary">
+                  Login with Google
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="bg-green-50 rounded-xl p-4 border border-green-100">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-green-800">Status: Connected</span>
+                <span className="text-xs text-green-600 bg-white px-2 py-1 rounded-full border border-green-200">
+                  Online
+                </span>
+              </div>
+              <div className="text-sm text-green-700 space-y-1">
+                <p>File: <span className="font-semibold">{driveConfig.fileName}</span></p>
+                {driveConfig.lastSync && (
+                  <p className="text-xs opacity-75 mt-2 pt-2 border-t border-green-200">
+                    Last synced: {driveConfig.lastSync}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+               <Button onClick={handlePullFromDrive} disabled={isSyncing} fullWidth variant="primary">
+                 {isSyncing ? (
+                  <div className="flex items-center gap-2">
+                    <Icons.Loader2 className="animate-spin" size={18} /> Pulling Data...
+                  </div>
+                ) : (
+                  'Force Pull Data'
+                )}
+              </Button>
+              <Button onClick={handleLogout} variant="secondary">
+                Logout
+              </Button>
+            </div>
+            <p className="text-xs text-gray-400 text-center">Changes are automatically saved to Drive.</p>
+          </div>
+        )}
+      </div>
+
+       {/* Category Management */}
+       <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
         <div className="flex items-center gap-4 mb-4">
           <div className="p-3 bg-pink-50 text-pink-600 rounded-full">
             <Icons.Tag size={24} />
@@ -237,111 +370,6 @@ export const Settings: React.FC<SettingsProps> = ({ currency, onCurrencyChange }
             <Icons.Plus size={16} className="mr-2" /> Add New Category
           </Button>
         )}
-      </div>
-
-      {/* Google Drive Configuration */}
-      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-        <div className="flex items-center gap-4 mb-4">
-          <div className={`p-3 rounded-full ${driveConfig.isConnected ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
-            <Icons.Download size={24} />
-          </div>
-          <div>
-            <h3 className="font-semibold text-gray-900">Google Drive Backup</h3>
-            <p className="text-sm text-gray-500">
-              {driveConfig.isConnected ? 'Connected to Drive' : 'Configure backup location'}
-            </p>
-          </div>
-        </div>
-
-        {!driveConfig.isConnected ? (
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Target Folder Name</label>
-              <input 
-                type="text" 
-                value={driveConfig.folderName}
-                onChange={(e) => handleDriveConfigChange('folderName', e.target.value)}
-                className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary focus:border-transparent"
-                placeholder="e.g. My Expenses"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Backup File Name</label>
-              <input 
-                type="text" 
-                value={driveConfig.fileName}
-                onChange={(e) => handleDriveConfigChange('fileName', e.target.value)}
-                className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary focus:border-transparent"
-                placeholder="expenses.csv"
-              />
-            </div>
-            <div className="pt-2">
-              <Button onClick={handleConnect} disabled={isConnecting} fullWidth variant="primary">
-                {isConnecting ? (
-                  <div className="flex items-center gap-2">
-                    <Icons.Loader2 className="animate-spin" size={18} /> Connecting...
-                  </div>
-                ) : (
-                  'Connect Google Drive'
-                )}
-              </Button>
-            </div>
-            <p className="text-xs text-gray-400 mt-2 text-center">
-              Requires Google Account authentication.
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <div className="bg-green-50 rounded-xl p-4 border border-green-100">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium text-green-800">Status: Active</span>
-                <span className="text-xs text-green-600 bg-white px-2 py-1 rounded-full border border-green-200">
-                  Online
-                </span>
-              </div>
-              <div className="text-sm text-green-700 space-y-1">
-                <p>Folder: <span className="font-semibold">{driveConfig.folderName}</span></p>
-                <p>Files: <span className="font-semibold">{driveConfig.fileName}, categories_config.json</span></p>
-                {driveConfig.lastSync && (
-                  <p className="text-xs opacity-75 mt-2 pt-2 border-t border-green-200">
-                    Last synced: {driveConfig.lastSync}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <Button onClick={handleSync} disabled={isSyncing} fullWidth variant="primary">
-                 {isSyncing ? (
-                  <div className="flex items-center gap-2">
-                    <Icons.Loader2 className="animate-spin" size={18} /> Syncing...
-                  </div>
-                ) : (
-                  'Sync Now'
-                )}
-              </Button>
-              <Button onClick={handleDisconnect} variant="secondary">
-                Disconnect
-              </Button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* About */}
-      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-        <div className="flex items-center gap-4 mb-4">
-          <div className="p-3 bg-purple-50 text-purple-600 rounded-full">
-            <Icons.Sparkles size={24} />
-          </div>
-          <div>
-            <h3 className="font-semibold text-gray-900">AI Configuration</h3>
-            <p className="text-sm text-gray-500">Powered by Gemini 2.5 Flash</p>
-          </div>
-        </div>
-        <p className="text-sm text-gray-600">
-          The app uses your environment API key to intelligently parse natural language inputs into structured transaction data.
-        </p>
       </div>
     </div>
   );

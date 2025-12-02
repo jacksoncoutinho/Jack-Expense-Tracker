@@ -30,8 +30,8 @@ export interface ChartDataPoint {
 
 export interface DriveConfig {
   isConnected: boolean;
-  folderName: string;
+  clientId: string; // User provided Client ID
   fileName: string;
+  fileId?: string; // ID of the file in Drive
   lastSync?: string;
-  autoSync: boolean;
 }
