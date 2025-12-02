@@ -1,0 +1,5 @@
+{
+  "name": "Jack Expense Tracker",
+  "description": "A smart, mobile-first daily expense tracker that uses Gemini AI to parse natural language transaction entries and provides daily spending analytics.",
+  "requestFramePermissions": []
+}
