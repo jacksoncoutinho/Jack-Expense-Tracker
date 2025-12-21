@@ -8,8 +8,14 @@ const parseTransaction = async (input: string, categories: string[]): Promise<{
   description?: string;
   date?: string;
 } | null> => {
-  // Always initialize GoogleGenAI with the named parameter apiKey from process.env.API_KEY.
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+  // Ensure we have an API key before initializing
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) {
+    console.error("Gemini API Key is missing. Please check your environment configuration.");
+    return null;
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
 
   try {
     const response = await ai.models.generateContent({
@@ -35,10 +41,10 @@ const parseTransaction = async (input: string, categories: string[]): Promise<{
       }
     });
 
-    // Access text via the property, not as a method.
-    const resultText = response.text;
-    if (resultText) {
-      return JSON.parse(resultText);
+    // Access text output from response.text property
+    const text = response.text;
+    if (text) {
+      return JSON.parse(text);
     }
     return null;
 
