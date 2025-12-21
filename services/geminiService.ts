@@ -8,17 +8,12 @@ const parseTransaction = async (input: string, categories: string[]): Promise<{
   description?: string;
   date?: string;
 } | null> => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) {
-    console.error("API Key not found");
-    return null;
-  }
-
-  const ai = new GoogleGenAI({ apiKey });
+  // Always initialize GoogleGenAI with the named parameter apiKey from process.env.API_KEY.
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3-flash-preview",
       contents: `Extract transaction details from this text: "${input}". 
       Available categories: ${categories.join(', ')}. 
       If no category matches, pick the closest one or "Other".
@@ -40,8 +35,10 @@ const parseTransaction = async (input: string, categories: string[]): Promise<{
       }
     });
 
-    if (response.text) {
-      return JSON.parse(response.text);
+    // Access text via the property, not as a method.
+    const resultText = response.text;
+    if (resultText) {
+      return JSON.parse(resultText);
     }
     return null;
 

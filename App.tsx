@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Dashboard } from './views/Dashboard';
-import { AddTransaction } from './views/AddTransaction';
-import { Settings } from './views/Settings';
-import { Icons } from './components/ui/Icons';
-import { Transaction } from './types';
-import { getTransactions, saveTransaction, deleteTransaction, getCurrency, saveCurrency, getDriveConfig } from './services/storageService';
-import { driveService } from './services/driveService';
+import { Dashboard } from './views/Dashboard.tsx';
+import { AddTransaction } from './views/AddTransaction.tsx';
+import { Settings } from './views/Settings.tsx';
+import { Icons } from './components/ui/Icons.tsx';
+import { Transaction } from './types.ts';
+import { getTransactions, saveTransaction, deleteTransaction, getCurrency, saveCurrency, getDriveConfig } from './services/storageService.ts';
+import { driveService } from './services/driveService.ts';
 
 type View = 'dashboard' | 'add' | 'settings';
 
@@ -14,16 +14,12 @@ export default function App() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [currency, setCurrency] = useState<string>('$');
 
-  // Load initial data
   useEffect(() => {
     setTransactions(getTransactions());
     setCurrency(getCurrency());
 
-    // Try to re-init GAPI if we have a client ID saved, but don't auto-login without user interaction usually.
-    // However, for GAPI V3, we load the script.
     const config = getDriveConfig();
     if (config.clientId) {
-      // Just load the lib, don't trigger auth yet
       driveService.initGapi(config.clientId).catch(console.error);
     }
   }, []);
@@ -47,19 +43,18 @@ export default function App() {
   const NavItem = ({ view, icon: Icon, label }: { view: View; icon: any; label: string }) => (
     <button
       onClick={() => setCurrentView(view)}
-      className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${
-        currentView === view ? 'text-primary' : 'text-gray-400 hover:text-gray-600'
+      className={`flex flex-col items-center justify-center w-full h-full space-y-1 transition-all ${
+        currentView === view ? 'text-primary scale-110' : 'text-gray-400 hover:text-gray-600'
       }`}
     >
       <Icon size={24} strokeWidth={currentView === view ? 2.5 : 2} />
-      <span className="text-[10px] font-medium">{label}</span>
+      <span className="text-[10px] font-bold uppercase tracking-tighter">{label}</span>
     </button>
   );
 
   return (
-    <div className="max-w-md mx-auto h-full flex flex-col bg-gray-50 shadow-2xl overflow-hidden relative sm:border-x sm:border-gray-200">
+    <div className="max-w-md mx-auto h-screen flex flex-col bg-gray-50 shadow-2xl overflow-hidden relative sm:border-x sm:border-gray-200">
       
-      {/* Main Content Area */}
       <main className="flex-1 overflow-y-auto scrollbar-hide">
         <div className="p-5 pb-24 min-h-full">
           {currentView === 'dashboard' && (
@@ -86,14 +81,13 @@ export default function App() {
         </div>
       </main>
 
-      {/* Bottom Navigation */}
-      <nav className="absolute bottom-0 left-0 w-full h-20 bg-white border-t border-gray-100 flex items-center justify-around pb-4 px-2 z-10 backdrop-blur-lg bg-white/90">
+      <nav className="absolute bottom-0 left-0 w-full h-20 bg-white/90 border-t border-gray-100 flex items-center justify-around pb-4 px-2 z-50 backdrop-blur-md">
         <NavItem view="dashboard" icon={Icons.Home} label="Home" />
         
         <div className="relative -top-5">
           <button
             onClick={() => setCurrentView('add')}
-            className="w-14 h-14 bg-primary rounded-full shadow-lg shadow-indigo-300 flex items-center justify-center text-white transform transition-transform active:scale-95 hover:bg-indigo-600"
+            className="w-14 h-14 bg-primary rounded-full shadow-lg shadow-indigo-300 flex items-center justify-center text-white transform transition-transform active:scale-90 hover:bg-indigo-600"
           >
             <Icons.Plus size={28} />
           </button>

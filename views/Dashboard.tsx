@@ -98,7 +98,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, onDelete, on
 
     return Object.entries(grouped)
       .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value);
+      // Fix arithmetic operation error by explicitly converting to Number for sort comparison
+      .sort((a, b) => Number(b.value) - Number(a.value));
   };
 
   const pieChartData = useMemo(() => getCategoryData(pieView), [transactions, pieView]);
@@ -113,7 +114,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, onDelete, on
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       // payload contains the stack items. We want to sort them by value desc
-      const sortedPayload = [...payload].sort((a, b) => b.value - a.value);
+      // Fix arithmetic operation error by explicitly converting to Number
+      const sortedPayload = [...payload].sort((a, b) => Number(b.value) - Number(a.value));
       const total = sortedPayload.reduce((sum, item) => sum + (Number(item.value) || 0), 0);
 
       return (
@@ -271,6 +273,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, onDelete, on
              <Icons.Plus size={16} className="mr-1" /> Add
           </Button>
         </div>
+        {/* Fixed: Replaced undefined 'handleDeleteTransaction' with the correct 'onDelete' prop */}
         <TransactionList transactions={transactions.slice(0, 5)} onDelete={onDelete} currency={currency} />
       </div>
     </div>
